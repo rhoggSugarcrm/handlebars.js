@@ -17,25 +17,45 @@ define(
       // PUBLIC API: You can override these methods in a subclass to provide
       // alternative compiled forms for name lookup and buffering semantics
       nameLookup: function(parent, name /* , type*/) {
-        var wrap,
-            ret;
-        if (parent.indexOf('depth') === 0) {
-          wrap = true;
+        const actual = _actualLookup();
+        const dangerousProperties = ['__defineGetter__','__defineSetter__','__lookupGetter__','__proto__'];
+
+        // Do not allow to access constructor of any object/class
+        // See: https://snyk.io/vuln/SNYK-JS-HANDLEBARS-469063
+        if (name === 'constructor') {
+          return 'Object.prototype.hasOwnProperty.call(' + parent + ',\'constructor\') ? ' + actual + ' : undefined';
         }
 
-        if (/^[0-9]+$/.test(name)) {
-          ret = parent + "[" + name + "]";
-        } else if (JavaScriptCompiler.isValidJavaScriptVariableName(name)) {
-          ret = parent + "." + name;
-        }
-        else {
-          ret = parent + "['" + name + "']";
+        // Block the above dangerous properties altogether from being used. If they are used in a template, we assume it
+        // could be to exploit the lib since the keywords don't make sense for actual template compilation or rendering
+        // unlike 'constructor' which could be someone's occupation :) lol
+        // See https://snyk.io/vuln/SNYK-JS-HANDLEBARS-534988
+        if (dangerousProperties.indexOf(name) !== -1) {
+          throw new Exception('For security reasons, you cannot use ' + name);
         }
 
-        if (wrap) {
-          return '(' + parent + ' && ' + ret + ')';
-        } else {
-          return ret;
+        return actual;
+
+        // Original 1.3.0 code for nameLookup which we default back to if a special keyword is not used
+        function _actualLookup() {
+          var wrap,
+              ret;
+          if (parent.indexOf('depth') === 0) {
+            wrap = true;
+          }
+          if (/^[0-9]+$/.test(name)) {
+            ret = parent + "[" + name + "]";
+          } else if (JavaScriptCompiler.isValidJavaScriptVariableName(name)) {
+            ret = parent + "." + name;
+          } else {
+            ret = parent + "['" + name + "']";
+          }
+
+          if (wrap) {
+            return '(' + parent + ' && ' + ret + ')';
+          } else {
+            return ret;
+          }
         }
       },
 
